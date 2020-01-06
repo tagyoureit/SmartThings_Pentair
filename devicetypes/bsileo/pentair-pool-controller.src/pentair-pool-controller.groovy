@@ -165,7 +165,7 @@ def manageChildren() {
         }
     }
     
-    def numCircuits = getDataValue("numberCircuits")    
+    def numCircuits = getDataValue("numberCircuits") as Integer
     if (numCircuits == null) { numCircuits = 8 }
     else { numCircuits = numCircuits.toInteger() }
     log.debug "Creating ${numCircuits} for this device"
@@ -248,14 +248,24 @@ def parse(String description) {
   if (msg.json.valve != null) {parseValve(msg.json.valve)} else {log.debug("no Valve in msg")}     
   if (msg.json.chlorinator != null) {parseChlorinator(msg.json.chlorinator)} else {log.debug("no Chlor in msg")}
   if (msg.json.intellichem != null) {parseIntellichem(msg.json.intellichem)} else {log.debug("no Chem in msg")}
+    if (msg.json.config != null) {parseConfig(msg.json.config)} else {log.debug("no Config in msg")}
 
+}
+
+def parseConfig(msg){
+def circuitNonLights
+    msg.json.config.nonLightCircuits.each {circuits, index ->
+        def values = circuits[index]
+        state.nonLightCircuits.put('${')
+
+    }
 }
 
 def parseTime(msg) {
 	log.info("Parse Time: ${msg}")
 }
 def parsePump(msg) {
-	log.info("Parse Schedule: ${msg}")
+	log.info("Parse Pump: ${msg}")
 }
 def parseSchedule(msg) {
 	log.info("Parse Schedule: ${msg}")

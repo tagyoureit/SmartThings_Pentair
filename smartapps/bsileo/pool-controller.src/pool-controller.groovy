@@ -90,11 +90,7 @@ def poolConfig() {
 
 def getPoolConfig() {
   // TODO - make a /all request to the pool controller and get the results back to set default options
-  state.includeChlor = true
-  state.includeChem = false
-  state.includeSolar = false
-  state.includeSpa = true
-  state.numCircuits = 8
+
 }
 
 
@@ -190,7 +186,7 @@ void verifyDevices() {
 		String ip = convertHexToIP(it.value.networkAddress)
 		String host = "${ip}:${port}"
         log.info("Verify UPNP PoolController Device @ http://${host}${it.value.ssdpPath}")
-        // log.debug("SENDING HubAction: GET ${it.value.ssdpPath} HTTP/1.1\r\nHOST: $host\r\n\r\n")
+        log.debug("SENDING HubAction: GET ${it.value.ssdpPath} HTTP/1.1\r\nHOST: $host\r\n\r\n")
 		sendHubCommand(new physicalgraph.device.HubAction("""GET ${it.value.ssdpPath} HTTP/1.1\r\nHOST: $host\r\n\r\n""", physicalgraph.device.Protocol.LAN, host, [callback: deviceDescriptionHandler]))
 	}
 }
@@ -227,27 +223,17 @@ def createOrUpdateDevice(mac,ip,port) {
         log.info "The Pool Controller Device with dni: ${mac} already exists...cleanup config"        
         d.updateDataValue("controllerIP",ip)
         d.updateDataValue("controllerPort",port)
-        d.updateDataValue("includeChlorinator",includeChlorinator?'true':'false')
-        d.updateDataValue("includeIntellichem",includeIntellichem?'true':'false')
-        d.updateDataValue("includeSolar",includeSolar?'true':'false')
-        d.updateDataValue("includeSpa",includeSpa?'true':'false')
-        d.updateDataValue("numberCircuits",state.numCircuits)
         d.manageChildren()
    }
    else {
    		log.info "Creating Pool Controller Device with dni: ${mac}"
-		d = addChildDevice("bsileo", "Pentair Pool Controller", mac, hub.id, [
+		d = addChildDevice("tagyoureit", "Pentair Pool Controller", mac, hub.id, [
 			"label": deviceName,
             "completedSetup" : true,
 			"data": [
 				"controllerMac": mac,
 				"controllerIP": ip,
-				"controllerPort": port,
-                "includeChlorinator":includeChlorinator,
-                "includeIntellichem":includeIntellichem,
-                "includeSolar":includeSolar,
-                "includeSpa":includeSpa,
-                "numberCircuits":state.numCircuits
+				"controllerPort": port
 				]
 			])
    }
