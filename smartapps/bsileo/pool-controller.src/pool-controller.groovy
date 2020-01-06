@@ -115,7 +115,7 @@ def getPoolConfig() {
         log.debug "Configure [${selectedDeviceInfo.value.mac}]"
         def params = [
             method: "GET",
-            path: "/all",
+            path: "/config/all",
             headers: [
                 HOST: "${selectedDeviceInfo.value.networkAddress}:${selectedDeviceInfo.value.deviceAddress}",
                 "Accept":"application/json" 
@@ -141,6 +141,7 @@ def getPoolConfig() {
 def parseConfig(resp) {
     def message = parseLanMessage(resp.description)   
     def msg = message.json
+    log.debug("in parseconfig.  msg = ${msg}")
 	log.debug("parseConfig - msg=${msg.config}")    	
     log.debug("parseConfig-circuit - msg=${msg.circuit}")
     // state.includeSolar = msg.config.equipment.solar.installed == 1
