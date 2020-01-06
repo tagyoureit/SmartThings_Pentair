@@ -12,7 +12,7 @@
  *
  */
 metadata {
-	definition (name: "Pentair Pool Light Switch", namespace: "bsileo", author: "Brad Sileo") {
+	definition (name: "Pentair Pool Light Switch", namespace: "tagyoureit", author: "Russ Goldin") {
 		capability "Switch"
         command onConfirmed
         command offConfirmed
@@ -35,10 +35,10 @@ metadata {
 	tiles {
 		multiAttributeTile(name:"switch", type: "generic", width: 1, height: 1, canChangeIcon: true)  {
         	tileAttribute("device.switch", key: "PRIMARY_CONTROL") {
-                attributeState "off", label: '${name}', action: "switch.on", icon: "st.switches.switch.off", backgroundColor: "#ffffff", nextState: "turningOn"           
-                attributeState "on", label: '${name}', action: "switch.off", icon: "st.switches.switch.on", backgroundColor: "#79b821", nextState: "tuningOff"
-                attributeState "turningOn", label:'${name}', icon:"st.switches.switch.on", backgroundColor:"#00a0dc", nextState: "on"
-                attributeState "turningOff", label:'${name}', icon:"st.switches.switch.off", backgroundColor:"#ffffff", nextState: "off"
+                attributeState "off", label: '${name}', action: "switch.on", icon: "st.Lighting.light13", backgroundColor: "#ffffff", nextState: "turningOn"           
+                attributeState "on", label: '${name}', action: "switch.off", icon: "st.Lighting.light11", backgroundColor: "#79b821", nextState: "tuningOff"
+                attributeState "turningOn", label:'${name}', icon:"st.Lighting.light11", backgroundColor:"#00a0dc", nextState: "on"
+                attributeState "turningOff", label:'${name}', icon:"st.Lighting.light13", backgroundColor:"#ffffff", nextState: "off"
             }
             // Note - this Approach works to display this name in the Child Device but does not carry through to the parent. Multi-attribute tiles do not work on a childTile??
             tileAttribute ("device.friendlyName", key: "SECONDARY_CONTROL") {

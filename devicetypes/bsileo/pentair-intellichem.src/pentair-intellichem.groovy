@@ -1,5 +1,5 @@
 /**
- *  Copyright 2017 Brad Sileo / Kevin Chartrand
+ *  Copyright 2017 Russ Goldin / Kevin Chartrand
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  *  in compliance with the License. You may obtain a copy of the License at:
@@ -12,7 +12,7 @@
  *
  */
 metadata {
-	definition (name: "Pentair Intellichem", namespace: "bsileo", author: "Brad Sileo") {
+	definition (name: "Pentair Intellichem", namespace: "tagyoureit", author: "Russ Goldin") {
 		capability "Refresh"
 		capability "sensor"
         capability "switch"
@@ -39,8 +39,8 @@ metadata {
 
 	tiles (scale:2) {
 	    standardTile("chlorinate", "device.switch", width:1, height:1, inactiveLabel: false, decoration: "flat") {
-			state "off",  action:"on", nextState: "updating", icon: "https://raw.githubusercontent.com/bsileo/SmartThings_Pentair/master/chlorine.png",backgroundColor: "#ffffff"
-			state "on", action:"off",  nextState: "updating", icon: "https://raw.githubusercontent.com/bsileo/SmartThings_Pentair/master/chlorine.png",backgroundColor: "#00a0dc"
+			state "off",  action:"on", nextState: "updating", icon: "https://raw.githubusercontent.com/tagyoureit/SmartThings_Pentair/master/chlorine.png",backgroundColor: "#ffffff"
+			state "on", action:"off",  nextState: "updating", icon: "https://raw.githubusercontent.com/tagyoureit/SmartThings_Pentair/master/chlorine.png",backgroundColor: "#00a0dc"
 			state "updating", label:"Updating...", icon: "st.secondary.secondary"
 		}
         

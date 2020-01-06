@@ -1,5 +1,5 @@
 /**
- *  Copyright 2017 Brad Sileo
+ *  Copyright 2017 Russ Goldin
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  *  in compliance with the License. You may obtain a copy of the License at:
@@ -12,7 +12,7 @@
  *
  */
 metadata {
-	definition (name: "Pentair Chlorinator", namespace: "bsileo", author: "Brad Sileo") {
+	definition (name: "Pentair Chlorinator", namespace: "tagyoureit", author: "Russ Goldin") {
 		capability "Refresh"
 		capability "Sensor"
         capability "switch"
@@ -29,8 +29,8 @@ metadata {
 
 	tiles (scale:2) {
 		standardTile("chlorinate", "device.switch", width:1, height:1, inactiveLabel: false, decoration: "flat") {
-			state "off",  action:"on", nextState: "updating", icon: "https://bsileo.github.io/SmartThings_Pentair/chlorine.png",backgroundColor: "#ffffff"
-			state "on", action:"off",  nextState: "updating", icon: "https://bsileo.github.io/SmartThings_Pentair/chlorine.png",backgroundColor: "#00a0dc"
+			state "off",  action:"on", nextState: "updating", icon: "https://tagyoureit.github.io/SmartThings_Pentair/chlorine.png",backgroundColor: "#ffffff"
+			state "on", action:"off",  nextState: "updating", icon: "https://tagyoureit.github.io/SmartThings_Pentair/chlorine.png",backgroundColor: "#00a0dc"
 			state "updating", label:"Updating...", icon: "st.secondary.secondary"
 		}
         
