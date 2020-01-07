@@ -89,10 +89,10 @@ def poolConfig() {
             }
             section("Please verify the options below.") {
               //input name:"numberCircuits", type:"number", title: "How many circuits:", required:true, defaultValue:state.numCircuits
-              input name:"includeSpa", type:"bool", title: "Enable Spa?", required:true, defaultValue:state.includeSpa
-              input name:"includeChlorinator", type:"bool", title: "Show Chlorinator Section?", required:true, defaultValue:state.includeChlor
-              input name:"includeIntellichem", type:"bool", title: "Show Intellichem Section?", required:true, defaultValue:state.includeChem
-              input name:"includeSolar", type:"bool", title: "Enable Solar?", required:true, defaultValue:state.includeSolar             
+            //   input name:"includeSpa", type:"bool", title: "Enable Spa?", required:true, defaultValue:state.includeSpa
+            //   input name:"includeChlorinator", type:"bool", title: "Show Chlorinator Section?", required:true, defaultValue:state.includeChlor
+            //   input name:"includeIntellichem", type:"bool", title: "Show Intellichem Section?", required:true, defaultValue:state.includeChem
+            //   input name:"includeSolar", type:"bool", title: "Enable Solar?", required:true, defaultValue:state.includeSolar             
                 }
             }
     	}
@@ -140,10 +140,18 @@ def getPoolConfig() {
 
 def parseConfig(resp) {
     def message = parseLanMessage(resp.description)   
-    def msg = message.json
-    log.debug("in parseconfig.  msg = ${msg}")
-	log.debug("parseConfig - msg=${msg.config}")    	
+    def msg = message.json.config
+	log.debug("parseConfig - msg=${msg}")    	
     log.debug("parseConfig-circuit - msg=${msg.circuit}")
+    state.bodies = msg.bodies.length
+    state.circuits = msg.circuits.length
+    state.features = msg.features.length
+    state.pumps = msg.pumps.length
+    state.chlorinators = msg.chlorinators.length
+    state.valves = msg.valves.length
+    state.heaters = msg.heaters.length
+    state.circuitGroups = msg.circuitGroups.length
+    state.lightGroups = msg.lightGroups.length || msg.intellibrite.length
     // state.includeSolar = msg.config.equipment.solar.installed == 1
     // state.includeChem = msg.config.equipment.intellichem.installed == 1
     // state.includeChlor = msg.config.equipment.chlorinator.installed == 1
@@ -156,7 +164,7 @@ def parseConfig(resp) {
     // state.lightCircuits = msg.config.equipment.circuit.lightCircuit
     // state.circuitData = msg.circuit
     // state.config=true
-    log.info "STATE=${state}"
+    log.debug "STATE=${state}"
 }
 
 def installed() {
