@@ -118,7 +118,7 @@ def getPoolConfig() {
         log.debug "Configure [${selectedDeviceInfo.value.mac}]"
         def params = [
             method: "GET",
-            path: "/config/all",
+            path: "/config/equipment",
             headers: [
                 HOST: "${selectedDeviceInfo.value.networkAddress}:${selectedDeviceInfo.value.deviceAddress}",
                 "Accept":"application/json" 
@@ -145,16 +145,6 @@ def parseConfig(resp) {
     def message = parseLanMessage(resp.description)   
     def msg = message.json
 	log.debug("parseConfig - msg=${msg}")
-    log.debug("equipment = ${msg.equipment}")	
-    state.bodies = msg.bodies.size()
-    state.circuits = msg.circuits.size()
-    state.features = msg.features.size()
-    state.pumps = msg.pumps.size()
-    state.chlorinators = msg.chlorinators.size()
-    state.valves = msg.valves.size()
-    state.heaters = msg.heaters.size()
-    state.circuitGroups = msg.circuitGroups.size()
-    state.lightGroups = msg.lightGroups.size() + msg.intellibrite.size()
     state.name = msg.equipment.model
     state.config = true
     log.debug "STATE=${state}"
@@ -305,9 +295,8 @@ def createOrUpdateDevice(mac,ip,port) {
    }
    else {
    		log.info "Creating Pool Controller Device with dni: ${mac}"
-		log.debug "what is deviceName?? ${deviceName}"
     d = addChildDevice("tagyoureit", "Pentair Pool Board", mac, hub.id, [
-			"label": deviceName,
+			"label": state.name,
             "completedSetup" : true,
 			"data": [
 				"controllerMac": mac,

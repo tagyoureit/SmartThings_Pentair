@@ -194,6 +194,7 @@ def installed() {
 
 def updated() {
   manageChildren()
+
   if (!state.updatedLastRanAt || now() >= state.updatedLastRanAt + 5000) {
     state.updatedLastRanAt = now()
     log.debug "Executing 'updated()'"
@@ -203,9 +204,59 @@ def updated() {
   }  
 }
 
+
+
+def manageChildrenConfigCB(physicalgraph.device.HubResponse hubResponse) {
+	def msg = hubResponse.json 
+    log.debug("msg?  ${msg}")
+    if (msg){
+        state.bodies = msg.bodies.size()
+        state.circuits = msg.circuits.size()
+        state.features = msg.features.size()
+        state.pumps = msg.pumps.size()
+        state.chlorinators = msg.chlorinators.size()
+        state.valves = msg.valves.size()
+        state.heaters = msg.heaters.size()
+        state.circuitGroups = msg.circuitGroups.size()
+        state.lightGroups = msg.lightGroups.size() + msg.intellibrite.size()
+    }
+    log.debug "STATE: ${state}"
+    if (state.bodies) manageBodies(msg.bodies)
+}
+
+def manageBodies(bodies) {
+    state.processing = true;
+    def existingBodies = childDevices.findAll({it.deviceNetworkId.contains("body-")});
+    log.debug "existing bodies ${existingBodies}"
+    // add/validate
+    log.debug "bodies: ${bodies}"
+        for (body in bodies){
+            log.debug "body: ${body}"
+            if (existingBodies.any {body.name}){
+                existingBodies - body.name
+            }
+            else {
+                def d = addChildDevice("tagyoureit","Pentair Pool Body", getChildDNI("body-${body.id}"), location.hubs[0].id, 
+                                                [completedSetup: true, label: "${body.name}" , isComponent:false,  componentLabel:"${body.name}" ])
+                log.debug "Created ${d}" 
+                }
+            }
+    
+    // delete 
+    existingBodies.each {
+        deleteChildDevice(it.deviceNetworkId)
+    }
+}
+
+
 def manageChildren() {
-	log.debug "Pool Controller manageChildren..."
-	def hub = location.hubs[0]    
+    if (!state.processing) {
+        state.processing = true
+        log.debug "Pool Controller manageChildren..."
+        def hub = location.hubs[0]  
+        sendEthernet("/config/all", manageChildrenConfigCB)
+        state.processing = false
+    }
     /* def poolHeat = childDevices.find({it.deviceNetworkId == getChildDNI("poolHeat")})
     if (!poolHeat) {
         poolHeat = addChildDevice("tagyoureit","Pentair Water Thermostat", getChildDNI("poolHeat"), hub.id, 
@@ -274,6 +325,7 @@ def manageChildren() {
                                 isComponent:false, completedSetup:true])  
     }  */  
 }
+
 
 def manageIntellibriteLights() {
 	def hub = location.hubs[0]    
@@ -465,7 +517,7 @@ def refresh() {
 }
 
 def poll() {
-  sendEthernet("/all")
+  // sendEthernet("/all")
 }
 
 def parse(String description) {  
