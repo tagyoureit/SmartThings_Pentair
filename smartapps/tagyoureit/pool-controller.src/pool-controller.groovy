@@ -31,13 +31,15 @@ preferences {
 
 // UPNP Device Discovery Code
 def deviceDiscovery() {
-	def options = [:]
+    def options = [:]
 	def devices = getVerifiedDevices()
-    state.config=false
+
+    if (!state.containsKey("config")){state.config = false}
+  
     log.debug("DevDisc ${devices}")
 	devices.each {
-    	//log.debug("Processing ${it}-->${it.value}")
-		def value = it.value.name ?: "Pool Controller ${it.value.mac}"
+    	//log.debug("Processing ${it}-->${it.value}... ${it.value.networkAddress}")
+		def value = it.value.name ?: "${convertHexToIP(it.value.networkAddress)}"
 		def key = it.value.mac
 		options["${key}"] = value
         //log.debug("SSDP ${key} = ${it.value}")
@@ -66,44 +68,45 @@ def deviceDiscovery() {
 	ssdpDiscover()
 	verifyDevices()
          
-	return dynamicPage(name: "deviceDiscovery", title: "Locate Pool Controller...", nextPage: "poolConfig", refreshInterval: 5, install: false, uninstall: true) {		
-        section("Please wait while we discover your nodejs-poolController. Discovery can take some time...Select your device below once discovered.", hideable:false, hidden:false) {
-			input "selectedDevice", "enum", required: false, title: "Select A Device (${options.size() ?: 0} found)", multiple: false, options: options
+		 dynamicPage(name: "deviceDiscovery", title: options.size()?"Select Pool Controller":"Locating Pool Controller...", nextPage: "poolConfig", refreshInterval: state.config?0:5, install: false, uninstall: devices.size()>0) {	
+         if (options.size()){
+    		section("${options.size()} nodejs-poolController servers found"){
+			input "selectedDevice", "enum", required: false, title: "Select your pool server's ip", multiple: false, options: options
+		     }
+         }
+         else {
+
+        section("uPNP is searching for nodejs-poolController.", hideable:false, hidden:false) {
+			paragraph "Please wait while we discover your nodejs-poolController. Discovery can take some time..."
+            
 		}
+
+         }	
         /*section("Manual poolController Configuration (Optional)", hideable:true, hidden:false) {
         	input "controllerIP", "text", title: "Controller IP Address", required: false, displayDuringSetup: true, defaultValue:""
           	input "controllerPort", "port", title: "Controller Port", required: false, displayDuringSetup: true, defaultValue:"3000"
-          	input "controllerMac", "text", title: "Controller MAC Address (all capitals, no colins 'AABBCC112233)", required: false, displayDuringSetup: true
+          	input "controllerMac", "text", title: "Controller MAC Address (all capitals, no colons 'AABBCC112233)", required: false, displayDuringSetup: true
         }*/
         
 	}
+    
 }
-
-// nodejs-PoolController configuration functions
 def poolConfig() {	   
-    if (state.config) {
-    	log.debug("poolConfig STATE=${state}")
-    	return dynamicPage(name: "poolConfig", title: "Verify Pool Configuration:", nextPage: "", refreshInterval: 0,install: true, uninstall: false) {
-            section("Name:") {
-                input name:"deviceName", type:"text", title: "Enter the name for your device", required:true, defaultValue:"Pool"
-            }
-            section("Please verify the options below.") {
-              //input name:"numberCircuits", type:"number", title: "How many circuits:", required:true, defaultValue:state.numCircuits
-            //   input name:"includeSpa", type:"bool", title: "Enable Spa?", required:true, defaultValue:state.includeSpa
-            //   input name:"includeChlorinator", type:"bool", title: "Show Chlorinator Section?", required:true, defaultValue:state.includeChlor
-            //   input name:"includeIntellichem", type:"bool", title: "Show Intellichem Section?", required:true, defaultValue:state.includeChem
-            //   input name:"includeSolar", type:"bool", title: "Enable Solar?", required:true, defaultValue:state.includeSolar             
-                }
-            }
-    	}
-    else {
-    	return dynamicPage(name: "poolConfig", title: "Getting Pool Configuration...", nextPage: "", refreshInterval: 2,install: false, uninstall: false) {
-		section("Name:") {
-        	input name:"deviceName", type:"text", title: "Enter the name for your device", required:true, defaultValue:"Pool"
-        	}
-        getPoolConfig()
-    	}
-	}
+    if (!state.config) getPoolConfig()
+    dynamicPage(name: "poolConfig", nextPage: "", refreshInterval: state.config?5:2,install: true, uninstall: false) {
+    if (state.config){
+    	section("Ready to install") {
+        paragraph "When you click Save, your pool equipment running on the ${state.name} will be installed.  It will take a few minutes for the child devices to be setup."
+       
+    }
+    }
+    else{ 
+		section("Loading pool details...") 
+        
+    }
+    
+    }
+    
 }
 
 def getPoolConfig() {
@@ -140,30 +143,20 @@ def getPoolConfig() {
 
 def parseConfig(resp) {
     def message = parseLanMessage(resp.description)   
-    def msg = message.json.config
-	log.debug("parseConfig - msg=${msg}")    	
-    log.debug("parseConfig-circuit - msg=${msg.circuit}")
-    state.bodies = msg.bodies.length
-    state.circuits = msg.circuits.length
-    state.features = msg.features.length
-    state.pumps = msg.pumps.length
-    state.chlorinators = msg.chlorinators.length
-    state.valves = msg.valves.length
-    state.heaters = msg.heaters.length
-    state.circuitGroups = msg.circuitGroups.length
-    state.lightGroups = msg.lightGroups.length || msg.intellibrite.length
-    // state.includeSolar = msg.config.equipment.solar.installed == 1
-    // state.includeChem = msg.config.equipment.intellichem.installed == 1
-    // state.includeChlor = msg.config.equipment.chlorinator.installed == 1
-    // state.includeSpa = msg.config.equipment.spa.installed == 1
-    // state.pumps = msg.config.equipment.pump
-    // state.controller = msg.config.equipment.controller
-    // state.circuitHudeAux = msg.config.equipment.circuit.hideAux
-    // state.numCircuits =  msg.config.equipment.circuit.nonLightCircuit.size() + msg.config.equipment.circuit.lightCircuit.size()
-    // state.nonLightCircuits = msg.config.equipment.circuit.nonLightCircuit
-    // state.lightCircuits = msg.config.equipment.circuit.lightCircuit
-    // state.circuitData = msg.circuit
-    // state.config=true
+    def msg = message.json
+	log.debug("parseConfig - msg=${msg}")
+    log.debug("equipment = ${msg.equipment}")	
+    state.bodies = msg.bodies.size()
+    state.circuits = msg.circuits.size()
+    state.features = msg.features.size()
+    state.pumps = msg.pumps.size()
+    state.chlorinators = msg.chlorinators.size()
+    state.valves = msg.valves.size()
+    state.heaters = msg.heaters.size()
+    state.circuitGroups = msg.circuitGroups.size()
+    state.lightGroups = msg.lightGroups.size() + msg.intellibrite.size()
+    state.name = msg.equipment.model
+    state.config = true
     log.debug "STATE=${state}"
 }
 
@@ -190,7 +183,7 @@ def initialize() {
 		addDevices()
 	}
     
-	addManualDevice()
+	// addManualDevice()
     
 	runEvery5Minutes("ssdpDiscover")
 }
@@ -278,16 +271,16 @@ def getDevices() {
 def addDevices() {
 	def devices = getDevices()
 	def selectedDeviceInfo = devices.find { it.value.mac == selectedDevice }
-    log.info('in add devices ${selectedDeviceInfo}')
-    // if (selectedDeviceInfo) {        	
-    //     createOrUpdateDevice(selectedDeviceInfo.value.mac,selectedDeviceInfo.value.networkAddress,selectedDeviceInfo.value.deviceAddress)			
-    // }
+    log.info("in add devices ${selectedDeviceInfo}")
+    if (selectedDeviceInfo) {        	
+        createOrUpdateDevice(selectedDeviceInfo.value.mac,selectedDeviceInfo.value.networkAddress,selectedDeviceInfo.value.deviceAddress)			
+    }
 }
 
-def addManualDevice() {
+/* def addManualDevice() {
 	log.info('in addManualDevice')
     //if (controllerMac && controllerIP && controllerPort) {  createOrUpdateDevice(controllerMac,controllerIP,controllerPort)	}
-}
+} */
 
 def createOrUpdateDevice(mac,ip,port) {
 	def hub = location.hubs[0]     
@@ -298,37 +291,37 @@ def createOrUpdateDevice(mac,ip,port) {
         log.info "The Pool Controller Device with dni: ${mac} already exists...cleanup config"        
         d.updateDataValue("controllerIP",ip)
         d.updateDataValue("controllerPort",port)
-        d.updateDataValue("includeChlorinator",includeChlorinator?'true':'false')
-        d.updateDataValue("includeIntellichem",includeIntellichem?'true':'false')
-        d.updateDataValue("includeSolar",includeSolar?'true':'false')
-        d.updateDataValue("includeSpa",includeSpa?'true':'false')
-        d.updateDataValue("numberCircuits",state.numCircuits as String)
+        // d.updateDataValue("includeChlorinator",includeChlorinator?'true':'false')
+        // d.updateDataValue("includeIntellichem",includeIntellichem?'true':'false')
+        // d.updateDataValue("includeSolar",includeSolar?'true':'false')
+        // d.updateDataValue("includeSpa",includeSpa?'true':'false')
+        // d.updateDataValue("numberCircuits",state.numCircuits as String)
         //these fail due to LazyMap not being supported
         //d.updateDataValue('nonLightCircuits',state.nonLightCircuits)
         //d.updateDataValue('lightCircuits',state.lightCircuits)
-        log.info('in createOrUpdateDevice ${d}')
-        //d.manageChildren()
+        log.info("in createOrUpdateDevice ${d}")
+        d.manageChildren()
 
    }
    else {
    		log.info "Creating Pool Controller Device with dni: ${mac}"
-		
-        /* d = addChildDevice("tagyoureit", "Pentair Pool Controller", mac, hub.id, [
+		log.debug "what is deviceName?? ${deviceName}"
+    d = addChildDevice("tagyoureit", "Pentair Pool Board", mac, hub.id, [
 			"label": deviceName,
             "completedSetup" : true,
 			"data": [
 				"controllerMac": mac,
 				"controllerIP": ip,
 				"controllerPort": port,
-                "includeChlorinator":includeChlorinator,
-                "includeIntellichem":includeIntellichem,
-                "includeSolar":includeSolar,
-                "includeSpa":includeSpa,
-                "numberCircuits":state.numCircuits,
-                'nonLightCircuits':state.nonLightCircuits,
-                'lightCircuits':state.lightCircuits
+                // "includeChlorinator":includeChlorinator,
+                // "includeIntellichem":includeIntellichem,
+                // "includeSolar":includeSolar,
+                // "includeSpa":includeSpa,
+                // "numberCircuits":state.numCircuits,
+                // 'nonLightCircuits':state.nonLightCircuits,
+                // 'lightCircuits':state.lightCircuits
 				]
-			]) */
+			]) 
    }
 }
 
