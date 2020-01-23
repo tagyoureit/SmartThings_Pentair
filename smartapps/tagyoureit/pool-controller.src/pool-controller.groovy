@@ -25,8 +25,8 @@ definition(
 
 
 preferences {
-    page(name: "deviceDiscovery", title: "UPnP Device Setup", content: "deviceDiscovery")
-    page(name: "poolConfig", title: "Pool Configuration", content: "poolConfig") 
+    page(name: "deviceDiscovery", title: "UPnP Device Setup")
+    page(name: "poolConfig", title: "Pool Configuration") 
 }
 
 // UPNP Device Discovery Code
@@ -34,9 +34,9 @@ def deviceDiscovery() {
     def options = [:]
 	def devices = getVerifiedDevices()
 
-    if (!state.containsKey("config")){state.config = false}
+    // if (!state.containsKey("config")){state.config = false}
   
-    log.debug("DevDisc ${devices}")
+    log.debug("Device Discovery ${devices}")
 	devices.each {
     	//log.debug("Processing ${it}-->${it.value}... ${it.value.networkAddress}")
 		def value = it.value.name ?: "${convertHexToIP(it.value.networkAddress)}"
@@ -68,10 +68,10 @@ def deviceDiscovery() {
 	ssdpDiscover()
 	verifyDevices()
          
-		 dynamicPage(name: "deviceDiscovery", title: options.size()?"Select Pool Controller":"Locating Pool Controller...", nextPage: "poolConfig", refreshInterval: state.config?0:5, install: false, uninstall: devices.size()>0) {	
+		 dynamicPage(name: "deviceDiscovery", title: options.size()?"Select Pool Controller":"Locating Pool Controller...", nextPage: devices.size()>0?"poolConfig":"", refreshInterval: state?.config?0:5, install: false, uninstall: devices.size()>0) {	
          if (options.size()){
     		section("${options.size()} nodejs-poolController servers found"){
-			input "selectedDevice", "enum", required: false, title: "Select your pool server's ip", multiple: false, options: options
+			input "selectedDevice", "enum", required: true, title: "Select your pool server's ip", multiple: false, options: options
 		     }
          }
          else {
@@ -93,7 +93,7 @@ def deviceDiscovery() {
 }
 def poolConfig() {	   
     if (!state.config) getPoolConfig()
-    dynamicPage(name: "poolConfig", nextPage: "", refreshInterval: state.config?5:2,install: true, uninstall: false) {
+    dynamicPage(name: "poolConfig", nextPage: "", refreshInterval: state.config?5:2,install: state.config, uninstall: false) {
     if (state.config){
     	section("Ready to install") {
         paragraph "When you click Save, your pool equipment running on the ${state.name} will be installed.  It will take a few minutes for the child devices to be setup."
@@ -101,8 +101,9 @@ def poolConfig() {
     }
     }
     else{ 
-		section("Loading pool details...") 
-        
+		section("Loading pool details...") {
+            paragraph "Please wait until this screen changes and 'Save' appears in the upper right."
+        }
     }
     
     }
@@ -145,7 +146,7 @@ def parseConfig(resp) {
     def message = parseLanMessage(resp.description)   
     def msg = message.json
 	log.debug("parseConfig - msg=${msg}")
-    state.name = msg.equipment.model
+    state.name = msg.model
     state.config = true
     log.debug "STATE=${state}"
 }
@@ -159,14 +160,15 @@ def installed() {
 def updated() {
 	log.debug "Updated with settings: ${settings}"
 
-	unsubscribe()
+	
 	initialize()
 }
 
 def initialize() {
 	unsubscribe()
 	unschedule()
-
+    log.debug "Initial State:  ${state}"
+    state.config = false
 	ssdpSubscribe()
 
 	if (selectedDevice) {
@@ -190,10 +192,10 @@ void ssdpDiscover() {
 
 void ssdpSubscribe() {
 	 if (!state.subscribed) {
+        state.subscribed = true
         log.trace "discover_devices: subscribe to location " + USN()
         //subscribe(location, "ssdpTerm." + USN(), ssdpHandler)
      	subscribe(location, null, ssdpHandler, [filterEvents: false])
-        state.subscribed = true
      }
 }
 

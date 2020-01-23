@@ -1,6 +1,5 @@
 import groovy.util.Eval;
 
-
 metadata {
 	definition (name: "Pentair Pool Board", namespace: "tagyoureit", author: "Russ Goldin") {
        capability "Polling"
@@ -165,6 +164,10 @@ metadata {
         // you must manually remove any entries that DO exist in your poolController configuration (e.g. poolcontroll:30000/config )
         // you do not want to see as the default configuration will display all circuits that exist
         
+        standardTile("refresh", "device.refresh", height:1,width:1,inactiveLabel: false) {
+                state "default", label:'Refresh', action:"refresh.refresh",  icon:"st.secondary.refresh-icon"
+        }
+
         main "mainSwitch"
         details "poolTemp","PoolHeatmode","poolPump","PoolHeatlower","PoolHeatset","PoolHeatraise",
                 "spaTemp","SpaHeatmode","spaPump","SpaHeatlower","SpaHeatset","SpaHeatraise",                
@@ -189,16 +192,34 @@ def configure() {
 }
 
 def installed() {
-	manageChildren()    
+    unschedule()
+    if (!state.installedLastRanAt || now() >= state.installedLastRanAt + 5000) {
+    state.installedLastRanAt = now()
+        log.debug "Executing 'installed()'"
+        state.installedLastRanAt = now()
+        state.updatedConfigLastRanAt = null
+        runIn(15,"manageChildren", [overwrite: true])  
+    }
+    //manageChildren()  
 }
 
 def updated() {
-  manageChildren()
-
-  if (!state.updatedLastRanAt || now() >= state.updatedLastRanAt + 5000) {
+    unschedule()
+        if (!state.updatedLastRanAt || now() >= state.updatedLastRanAt + 5000) {
     state.updatedLastRanAt = now()
+                log.debug "Executing 'installed()'"
+                state.updatedLastRanAt = now()
+            log.debug "Executing 'updated()'"
+        state.updatedConfigLastRanAt = null
+        state.updatedStateLastRanAt = null
+  runIn(15, "manageChildren", [overwrite: true])
+        }
+  //manageChildren()
+
+  if (!state.updatedConfigLastRanAt || now() >= state.updatedConfigLastRanAt + 5000) {
+    state.updatedConfigLastRanAt = now()
     log.debug "Executing 'updated()'"
-    runIn(3, "updateDeviceNetworkID")
+    runIn(15, "updateDeviceNetworkID")
   } else {
     log.trace "updated(): Ran within last 5 seconds so aborting."
   }  
@@ -206,57 +227,380 @@ def updated() {
 
 
 
-def manageChildrenConfigCB(physicalgraph.device.HubResponse hubResponse) {
-	def msg = hubResponse.json 
-    log.debug("msg?  ${msg}")
-    if (msg){
-        state.bodies = msg.bodies.size()
-        state.circuits = msg.circuits.size()
-        state.features = msg.features.size()
-        state.pumps = msg.pumps.size()
-        state.chlorinators = msg.chlorinators.size()
-        state.valves = msg.valves.size()
-        state.heaters = msg.heaters.size()
-        state.circuitGroups = msg.circuitGroups.size()
-        state.lightGroups = msg.lightGroups.size() + msg.intellibrite.size()
+def manageChildrenConfigBodyCB(physicalgraph.device.HubResponse hubResponse) {
+    state.updatedConfigLastRanAt = now()
+	def msg = convertLazyMapToLinkedHashMap(hubResponse.json) 
+    log.debug("config body msg:  ${msg}")
+    manageChildrenConfigWrapper(msg)
+     if (!state.updatedStateLastRanAt || now() >= state.updatedStateLastRanAt + 5000) {
+        log.debug "Pool Controller manageChildrenConfigBodyCB..."
+        def hub = location.hubs[0]  
+        // run 2nd time to get state values set
+        // sendEthernet("/config/all", manageChildrenConfigBodyCB)
+        //runIn(25, sendEthernetState)
     }
-    log.debug "STATE: ${state}"
-    if (state.bodies) manageBodies(msg.bodies)
 }
 
-def manageBodies(bodies) {
-    state.processing = true;
+def sendEthernetState(){
+    sendEthernet("/state/all", manageChildrenStateCB)
+}
+def sendEthernetConfigAll(){
+    sendEthernet("/config/all", manageChildrenConfigCB)
+}
+
+def manageChildrenConfigCB(physicalgraph.device.HubResponse hubResponse) {
+    // state.updatedConfigLastRanAt = now()
+	def msg = convertLazyMapToLinkedHashMap(hubResponse.json) 
+    log.debug("config all msg:  ${msg}")
+    manageChildrenConfigCircuitsWrapper(msg)
+/*      if (!state.updatedStateLastRanAt || now() >= state.updatedStateLastRanAt + 5000) {
+        log.debug "Pool Controller manageChildrenConfigCB..."
+        def hub = location.hubs[0]  
+        // run 2nd time to get state values set
+        // sendEthernet("/config/all", manageChildrenConfigCB)
+        runIn(25, sendEthernetState)
+    } */
+        runIn(25, sendEthernetState)
+}
+
+def manageChildrenConfigWrapper(msg){
+    if (msg){
+
+        // manage child groups
+        manageConfigBodies(msg)
+        runIn(15, sendEthernetConfigAll)
+    }
+    log.debug "STATE: ${state}"
+}
+
+def manageChildrenConfigCircuitsWrapper(msg){
+      if (msg){
+
+        // state.bodies = msg.bodies.size()
+        // state.circuits = msg.circuits.size()
+        // state.features = msg.features.size()
+        // state.pumps = msg.pumps.size()
+        // state.chlorinators = msg.chlorinators.size()
+        // state.valves = msg.valves.size()
+        // state.heaters = msg.heaters.size() // not in State... bug
+        // state.circuitGroups = msg.circuitGroups.size()
+        // state.virtualCircuits = msg.virtualCircuits.size()
+        // state.lightGroups = msg.lightGroups.size() + msg.intellibrite.size()
+        state.equipment = msg.equipment
+        state.configVersion = msg.configVersion
+        state.options = msg.pool.options
+        manageConfigCircuits(msg.circuits, 'circuit')
+        manageConfigCircuits(msg.features, 'feature')
+        
+    }
+    log.debug "STATE: ${state}"
+}
+
+def manageChildrenStateCB(physicalgraph.device.HubResponse hubResponse) {
+    state.updatedStateLastRanAt = now()
+	def msg = hubResponse.json 
+    log.debug("state msg:  ${msg}")
+    if (msg){
+        def cfg = convertLazyMapToLinkedHashMap(msg)
+        manageVirtualCircuits(msg.virtualCircuits, 'virtualCircuit')
+        manageStateBodies(cfg.temps.bodies, cfg.temps)
+        manageStateCircuits(cfg.virtualCircuits, 'virtualCircuit')
+        manageStateCircuits(cfg.circuits, 'circuit')
+        manageStateCircuits(cfg.features, 'feature')
+    }
+}
+
+def manageConfigBodies(bodies) {
+    log.debug "Executing 'manageConfigBodies()'"
     def existingBodies = childDevices.findAll({it.deviceNetworkId.contains("body-")});
     log.debug "existing bodies ${existingBodies}"
     // add/validate
     log.debug "bodies: ${bodies}"
-        for (body in bodies){
-            log.debug "body: ${body}"
-            if (existingBodies.any {body.name}){
-                existingBodies - body.name
-            }
-            else {
-                def d = addChildDevice("tagyoureit","Pentair Pool Body", getChildDNI("body-${body.id}"), location.hubs[0].id, 
-                                                [completedSetup: true, label: "${body.name}" , isComponent:false,  componentLabel:"${body.name}" ])
-                log.debug "Created ${d}" 
+
+            try{
+                     for (body in bodies){
+
+                            def dni = getChildDNI("body-${body.id}")
+                         log.debug "in loop for ${body} with name ${body.name}"
+                           if (existingBodies.any {it.deviceNetworkId == dni}){
+                            log.debug "Validate existing body ${body.name}"
+                            def childBody = childDevices.find {it.deviceNetworkId == dni}
+                            //body.each { key, val ->
+                                // childBody.updateState(key, val)
+                            //}
+                            // childBody.updateState([data:body])
+                            log.debug "existing ${childBody} sending data ${body}"
+                            runIn(2, sendStateToChild, [overwrite: false, data: [dni: dni, data:body]])
+                            //sendStateToChild([dni: dni, data: body])
+                            existingBodies.removeAll {it.deviceNetworkId == dni};
+                        }
+                        else {
+                            // def dni = getChildDNI("body-${body.id}")
+                            log.debug "Creating dni: ${dni}"
+                            def hubId = location.hubs[0].id;
+                            def d = addChildDevice("tagyoureit","Pentair Pool Body", dni, hubId, 
+                            [completedSetup: true, label: body.name , isComponent:false,  componentLabel: body.name ])
+                            log.debug "Created ${d}" 
+                            log.debug "new ${d} sending data ${body}"
+                            runIn(8+(body.id), sendStateToChild, [overwrite: false, data: [dni: dni, data:body]])
+                        }  
+                        log.debug "end loop for ${body} with name ${body.name}"
+                        
+                        }
+                        
+                    
+                
+                // delete if not active still
+             /*     if (existingBodies){
+
+                log.debug "Deleting invalid body ${existingBodies}"
+                existingBodies.each {
+                    deleteChildDevice(it.deviceNetworkId)
                 }
+                }  */
             }
-    
-    // delete 
-    existingBodies.each {
-        deleteChildDevice(it.deviceNetworkId)
+        catch (e) {
+            log.error "Error in creating body: ${e}"
+        }
+    log.debug "Done with manageConfigBodies"
+
+}
+
+def manageStateBodies(bodies, temps) {
+    log.debug "Executing 'manageStatetemps()'"
+    log.debug "bodies: ${bodies} \r\ntemps: ${temps}"
+        for (body in bodies){
+            try {
+            log.debug "bodyTemp: ${body}"
+            def bodyDNI = getChildDNI("body-${body.id}")
+            def childBody = childDevices.find {it.deviceNetworkId == bodyDNI};
+            if (childBody){
+                childBody.updateState(body)
+                // childBody.updateBodyState(body)
+                if (temps) childBody.updateScale(temps.units)
+            }
+            
+            }
+            catch (e) {
+                log.debug "ERROR: manageStateBodies - ${e}"
+            }
+        }
+    log.debug "Done with manageStateBodies"
+
+}
+
+def sendStateToChild(data){
+    data = convertLazyMapToLinkedHashMap(data)
+    log.debug "execute sendStateToChild for ${data.dni}: ${data.data}"
+    def child = childDevices.find({it.deviceNetworkId == data.dni});
+    if (child){
+       /*  if (child.deviceNetworkId.contains("body")){
+            log.info "REMOVING id from ${child} and data ${data}"
+            data.data.remove("id")
+        } */
+    //  data.each { key, val ->
+                    if (child.name.contains("body") && data.data?.id) log.error "UH OH.  ${child} is going to receive data with id ${data.data}"
+                      log.debug "parent: setting child ${child} (${data.dni}) values ${data.data}"
+    //                   child.updateState(key, val)
+    //               }
+            child.updateState(data.data)
+            
     }
 }
 
+def manageVirtualCircuits(circuits, type){
+    def existingCircuits = childDevices.findAll({it.deviceNetworkId.contains("${type}-")});
+        for (el in circuits){
+            log.debug "el in virtual circs: ${el}"
+            def dni = getChildDNI("${type}-${el.id}")
+
+            def virtualCirc = childDevices.find({it.deviceNetworkId.toString() == dni})
+            if (!virtualCirc) {
+                def hubId = location.hubs[0].id
+                virtualCirc = addChildDevice("tagyoureit","Pentair Pool Control Switch",                dni, hubId, 
+                                        [completedSetup: true, label: el.name , isComponent:false, componentName: el.name, componentLabel: el.name ])
+                runIn(8, sendStateToChild, [overwrite: false, data: [dni: dni, data:el]])
+                log.debug "Created virtualCirc"
+            }
+        }
+}
+
+def manageConfigCircuits(circuits, type) {
+    log.debug "Executing 'manageConfigCircuits()'"
+    // def existingCircuits = childDevices.findAll({it.deviceNetworkId.contains("${type}-")});
+    // log.debug "existing ${type}s ${existingCircuits}"
+    // def existingBodies = childDevices.findAll({it.deviceNetworkId.contains("body-")});
+
+    log.debug "retrieved ${type}s: ${circuits}"
+        for (el in circuits){
+                log.debug "el: ${el}"
+                try {
+                
+              def childCircDNI = getChildDNI("${type}-${el.id}")
+              def childCircuit = existingCircuits.find {it.deviceNetworkId.toString() == childCircDNI};
+                if (el.name == "Pool" || el.name == "Spa") {
+                try {
+                    def childBody = existingBodies.find {it.currentState("circuit")?.value.toString() == el.id.toString()};
+                    if (!childBody) {log.error "don't have pool or spa yet? \npool circuit: ${childDevices.find {it.currentState("circuit")?.value.toString() == "6"}} \n spa circuit: ${childDevices.find {it.currentState("circuit")?.value.toString() == "1"}}"
+                    }
+                    
+                    log.debug "1. Found existing body: ${childBody}"
+                    log.debug "2. Not creating ${type} ${el.name}-${el.id} because it is a Body type"
+                    
+                    
+                    existingBodies.removeAll {it.currentState("circuit")?.value.toString() == el.id.toString()};
+                    existingCircuits.removeAll {it.currentState("id")?.value.toString() == el.id.toString()};
+                   
+                    // remove id as it conflicts with body's id.  trying to change.
+                    el.remove("id")
+                    runIn(2, sendStateToChild, [overwrite: false, data: [dni: childBody?.deviceNetworkId, data: el]])
+                    log.info "3a. found existing ${el.name} and should not be in ${existingCircuits} or ${existingBodies}"
+                    }
+                    catch (e){
+                        log.error "block 1 error ${e}"
+                    }
+                   
+                }
+
+
+
+              else if (childCircuit){
+                  try {
+                log.debug "4. Found existing ${type}: ${childCircuit}"
+                log.debug "5. Validate existing ${type} ${el.name}"
+                log.debug "6. looking for ${el.name} with dni ${childCircDNI}"
+  
+
+                    // sendStateToChild([dni: childCircDNI, data: el])  
+                     runIn(2, sendStateToChild, [overwrite: false, data: [dni: childCircDNI, data: el]])       
+                    existingCircuits.removeAll {it.deviceNetworkId.toString() == childCircDNI};
+                    log.info "4. existing ${el.name} and should not be in ${existingCircuits}"
+                }
+                                 
+                    catch (e){
+                        log.error "block 2 error ${e}"
+                    }
+
+              }
+            
+            else if (!childCircuit && el.isActive){
+                try {
+                def hubId = location.hubs[0].id
+                // def dni = getChildDNI("${type}-${el.id}")
+                def d = addChildDevice("tagyoureit","Pentair Pool Control Switch", childCircDNI, hubId, 
+                  [completedSetup: true, 
+                  label: "${el.name}" , 
+                  isComponent:false,  
+                  componentLabel:"${el.name}"] 
+                  )
+                log.debug "11. Created ${type} ${d}" 
+                runIn(8+(el.id), sendStateToChild, [overwrite: false, data: [dni: childCircDNI, data:el]])
+                                    }
+                    catch (e){
+                        log.error "block 3 error ${e}"
+                    }
+            } 
+           
+            else {
+                log.debug "12. Skipped ${type} ${d} because isActive=${el.isActive} and we got to the end" 
+            }
+                childBody = null
+                childCircuit = null
+            }
+                catch (e){
+                    log.error "error comparing... ${e}"
+                }
+            log.debug "13. Ending logic for ${type}: ${el}"  
+            }
+    
+    // delete if not active still
+     if (existingCircuits){
+    log.debug "what is existing circuits to delete?  ${existingCircuits}"
+    
+    /* existingCircuits.each {
+        log.debug "Deleting invalid ${type} ${it}"
+        deleteChildDevice(it.deviceNetworkId)
+    } */
+    }  
+    log.debug "Done with manageConfigCircuits"
+}
+
+def manageStateCircuits(circuits, type) {
+    log.debug "Executing 'manageStateCircuits()'"
+    log.debug "${type}s: ${circuits} \r\ntype: ${type}"
+        for (circuit in circuits){
+            try {
+                log.debug "circuit before data: ${circuit}"
+            def data = convertLazyMapToLinkedHashMap(circuit)
+            log.debug "${type} id:${circuit.id}: ${circuit}"
+            if (data.id == 1 || data.id == 6){
+                // def existingBodies = childDevices.findAll({it.deviceNetworkId.contains("body-")});
+
+                // def childBody = existingBodies.find {
+                //    it.currentState("circuit")?.value == data.id};
+                def childBody = childDevices.find({it.deviceNetworkId == getChildDNI("body-${data.id}")})
+
+                // if (childBody){
+                    // NOTE: change logic later to dynamically check for
+                    data.remove("id")
+                    log.trace "about to send to ${data.id} data (should not have id): ${data}"
+                    // childBody.updateCircuitState(data)
+                    childBody.updateState(data)
+            //    }
+
+            }
+            // def childBodyDNI = getChildDNI("body-${circuit.id}")
+
+            if (circuit.id != 1 || circuit.id != 6){
+                    def circuitDNI = getChildDNI("${type}-${circuit.id}")
+                    def childCircuit = childDevices.find {it.deviceNetworkId == circuitDNI}
+                    if (childCircuit) {
+                        log.debug "updating state for ${childCircuit}.  Sending ${data}"
+                        // childCircuit.updateCircuitState(data)
+                        runIn(1, sendStateToChild, [overwrite: false, data: [dni: circuitDNI, data: data]])
+                    }
+                    else {
+                        log.error "why is childCircuit null in manageStateCircuits type=${type},  circuit=${circuit}"
+                    }
+                    }
+            }
+            catch (e) {
+                log.error "ERROR: manageStateCircuits - ${e}"
+            }
+        }
+    log.debug "Done with manageStatecircuits"
+
+}
+
+
+def haveChildren(run) {
+
+    log.debug "Executing 'haveChildren()'"
+    log.debug "run is ${run}"
+     if (!childDevices || run) {
+        log.debug run?"haveChildren run (anyway) is true":"No children found, will retry"
+        def hub = location.hubs[0]  
+        sendEthernet("/config/bodies", manageChildrenConfigBodyCB)
+        runIn(15, "haveChildren", [overwrite: true])
+    }
+    else {
+        log.debug "We have children, not asking for config anymore."
+    }
+}
 
 def manageChildren() {
-    if (!state.processing) {
-        state.processing = true
-        log.debug "Pool Controller manageChildren..."
-        def hub = location.hubs[0]  
-        sendEthernet("/config/all", manageChildrenConfigCB)
-        state.processing = false
-    }
+    unschedule()
+    log.debug "manageChildren state last updated:  ${state.manageChildrenLastRanAt}"
+     if (!state.manageChildrenLastRanAt || now() >= state?.manageChildrenLastRanAt + 5000) {
+         state.manageChildrenLastRanAt = now()
+        log.debug "Executing 'manageChildren()'"
+        if (!state.updatedConfigLastRanAt || now() >= state?.updatedConfigLastRanAt + 5000) {
+            log.debug "Pool Controller manageChildren..."
+            def hub = location.hubs[0]  
+            //sendEthernet("/config/all", manageChildrenConfigBodyCB)
+            runIn(5, "haveChildren", [overwrite: true, data: [run: true]])
+        }
+     }
     /* def poolHeat = childDevices.find({it.deviceNetworkId == getChildDNI("poolHeat")})
     if (!poolHeat) {
         poolHeat = addChildDevice("tagyoureit","Pentair Water Thermostat", getChildDNI("poolHeat"), hub.id, 
@@ -327,7 +671,7 @@ def manageChildren() {
 }
 
 
-def manageIntellibriteLights() {
+/* def manageIntellibriteLights() {
 	def hub = location.hubs[0]    
 	log.debug "Create/Update Intellibrite Light Children for this device"
     def lights = parent.state.lightCircuits
@@ -347,9 +691,9 @@ def manageIntellibriteLights() {
         }
         instance = instance+1
      }
-}
+} */
 
-def makeLightCircuit(circuitID) {
+/* def makeLightCircuit(circuitID) {
 	def hub = location.hubs[0]
     def lCircuits = parent.state.circuitData
     def lightInfo = lCircuits[circuitID]
@@ -373,9 +717,9 @@ def makeLightCircuit(circuitID) {
         {
             log.debug "Error! " + e                                                                
         }
-}
+} */
 
-def makeIntellibriteLightCircuit(circuitID,instance) {
+/* def makeIntellibriteLightCircuit(circuitID,instance) {
 	def hub = location.hubs[0]
     def lCircuits = parent.state.circuitData
     def lightInfo = lCircuits[circuitID]
@@ -399,8 +743,8 @@ def makeIntellibriteLightCircuit(circuitID,instance) {
         {
             log.debug "Error! " + e                                                                
         }
-}
-def manageIntellibriteModes(instanceID, fName, circuitID) {
+} */
+/* def manageIntellibriteModes(instanceID, fName, circuitID) {
 	def hub = location.hubs[0]    
 	log.debug "Create/Update Intellibrite Light Mode Children for device:" + circuitID
 	//def colors = ['Off','On','Color Sync','Color Swim','Color Set', 'Party','Romance','Caribbean','American','Sunset','Royal','Save','Recall','Blue','Green','Red','White','Magenta']
@@ -440,9 +784,9 @@ def manageIntellibriteModes(instanceID, fName, circuitID) {
             }
       }
 }
+ */
 
-
-def managePumps() {
+/* def managePumps() {
 	log.debug "Create/Update Pumps for this device"
 	def hub = location.hubs[0]   
     def pumps = parent.state.pumps
@@ -473,15 +817,15 @@ def managePumps() {
             log.debug "Error With Pump Child ${id} - " + e                                                                
         }
     }
-}
+} */
 
-def manageCircuits() {
-	log.debug "Create/Update Circuits for this device"
-	manageFeatureCircuits()
-}
+// def manageConfigCircuits() {
+// 	log.debug "Create/Update Circuits for this device"
+// 	manageFeatureCircuits()
+// }
 
 
-def manageFeatureCircuits() {
+/* def manageFeatureCircuits() {
 	def hub = location.hubs[0]   
     def nLCircuits = parent.state.nonLightCircuits
     nLCircuits.each {i,k ->
@@ -509,44 +853,92 @@ def manageFeatureCircuits() {
         }
     }
 }
-
+ */
 
 def refresh() {
     log.info "Requested a refresh"
-    poll()
+    // poll()
+    if (!state.updatedStateLastRanAt || now() >= state.updatedStateLastRanAt + 5000) {
+        log.debug "Pool Controller manageChildren..."
+        def hub = location.hubs[0]  
+        sendEthernet("/state/all", manageChildrenStateCB)
+    }
 }
 
 def poll() {
   // sendEthernet("/all")
 }
 
+def parseResponse(physicalgraph.device.HubResponse hubResponse) {  
+  //log.debug "Executing parse()"
+//   def msg = parseLanMessage(description)
+//   log.debug "Full msg: ${msg}"
+//    log.debug "HEADERS: ${msg.headers}"
+// 200 status is a response to on outgoing message.  incoming won't have this
+    if (hubResponse.status == 200) {
+            log.info "return successful for outbound response ${hubResponse}"
+
+        }
+        else {
+            log.error "had some error sending outbound request ${hubResponse}"
+        }
+        }
+
 def parse(String description) {  
   //log.debug "Executing parse()"
   def msg = parseLanMessage(description)
-  //log.debug "Full msg: ${msg}"
-  //log.debug "HEADERS: ${msg.headers}"
-  //log.debug "JSON: ${msg.json}"
-  //log.debug "x-event: ${msg.headers['x-event']}"
+//   log.debug "Full msg: ${msg}"
+//    log.debug "HEADERS: ${msg.headers}"
+// 200 status is a response to on outgoing message.  incoming won't have this
+    if (msg.status == 200) { log.error "code this as a response ${msg}" }
+       
+    def event = msg.headers['x-event']
+  log.debug "x-event: ${event}"
+  def json = convertLazyMapToLinkedHashMap(msg.json)
+
+  // log.debug "JSON: ${msg.json}"
   //log.debug "msg.JSON.Circuits: ${msg.json.circuit}"
   //log.debug "msg.JSON.Time: ${msg.json.time}"
   //log.debug "msg.JSON.Temp: ${msg.json.temperature}"
   //log.debug "msg.JSON.Chem: ${msg.json.intellichem}"
-  if (msg.json) {
-      if (msg.json.temperature != null) {parseTemps(msg.json.temperature)} else {log.debug("no Temps in msg")}
-      if (msg.json.circuit != null){ parseCircuits(msg.json.circuit)} else {log.debug("no Circuits in msg")}
-      if (msg.json.time != null) {parseTime(msg.json.time)} else {log.debug("no Time in msg")}
-      if (msg.json.schedule != null) {parseSchedule(msg.json.schedule)} else {log.debug("no Schedule in msg")}
-      if (msg.json.pump != null) {parsePump(msg.json.pump)} else {log.debug("no Pumps in msg")}
-      if (msg.json.valve != null) {parseValve(msg.json.valve)} else {log.debug("no Valve in msg")}     
-      if (msg.json.chlorinator != null) {parseChlorinator(msg.json.chlorinator)} else {log.debug("no Chlor in msg")}
-      if (msg.json.intellichem != null) {parseIntellichem(msg.json.intellichem)} else {log.debug("no Chem in msg")}
+
+   if (json) {
+      switch (event) {
+          case 'config':
+                // this somehow is deleting children.
+                // manageChildrenConfigWrapper(json)
+                break
+          case 'body':
+                manageStateBodies([json], null)
+                break
+          case 'circuit':
+                manageStateCircuits([json], 'circuit')
+                break
+          case 'feature':
+                manageStateCircuits([json], 'feature')
+                break
+          case 'temps':
+                manageStateBodies([json.bodies], [json])
+            break
+        default:
+                log.error "Have not coded incoming ${event} yet."
+      }
+    //   if (msg.json.temperature != null) {parseTemps(msg.json.temperature)} else {log.debug("no Temps in msg")}
+    //   if (msg.json.circuit != null){ parseCircuits(msg.json.circuit)} else {log.debug("no Circuits in msg")}
+    //   if (msg.json.time != null) {parseTime(msg.json.time)} else {log.debug("no Time in msg")}
+    //   if (msg.json.schedule != null) {parseSchedule(msg.json.schedule)} else {log.debug("no Schedule in msg")}
+    //   if (msg.json.pump != null) {parsePump(msg.json.pump)} else {log.debug("no Pumps in msg")}
+    //   if (msg.json.valve != null) {parseValve(msg.json.valve)} else {log.debug("no Valve in msg")}     
+    //   if (msg.json.chlorinator != null) {parseChlorinator(msg.json.chlorinator)} else {log.debug("no Chlor in msg")}
+    //   if (msg.json.intellichem != null) {parseIntellichem(msg.json.intellichem)} else {log.debug("no Chem in msg")}
+
   }
   else {
      log.debug "No JSON In response MSG: ${msg}"
-  }
+  } 
 }
 
-def parseConfig(msg){
+/* def parseConfig(msg){
 def circuitNonLights
     msg.json.config.nonLightCircuits.each {circuits, index ->
         def values = circuits[index]
@@ -623,9 +1015,9 @@ def parseCircuits(msg) {
   
          }
       }     
-}
+} */
 
-def getChildCircuit(id) {
+/* def getChildCircuit(id) {
 	// get the circuit device given the ID number only (e.g. 1,2,3,4,5,6)
     //log.debug "CHECK getChildCircuit:${id}"
 	def children = getChildDevices()
@@ -668,9 +1060,7 @@ def getSpaHeatChild() {
 }
 
 
-def getChildDNI(name) {
-	return getDataValue("controllerMac") + "-" + name
-}
+
 
 def parseTemps(msg) {
     log.info("Parse Temps ${msg}")
@@ -717,44 +1107,28 @@ def parseChlorinator(msg) {
 	log.info('Parse Chlor')
     childDevices.find({it.deviceNetworkId == getChildDNI("poolChlorinator")})?.parse(msg)
 }
-
-def on() {
-	if (mainSwitchMode == 'Pool Light') {
-		return setCircuit(lightCircuitID(),1)
-    }
-    else if (mainSwitchMode == 'Pool Pump') {
-    	poolPumpOn()
-    }
-    else if (mainSwitchMode == 'Spa Pump') {
-    	spaPumpOn()
-    }
+ */
+/* def on() {
+    log.debug "child"
+    log.debug "child ${this} state: ${state}"
+        log.debug "turning on id:  ${state.id}"
+	parent.childOn(state.id)
+    sendEvent(name: "switch", value: "turningOn", displayed:false,isStateChange:false)    
 }
+
 
 def off() {
-	if (mainSwitchMode == 'Pool Light') {
-		return setCircuit(lightCircuitID(),0)
-    }
-    else if (mainSwitchMode == 'Pool Pump') {
-    	poolPumpOff()
-    }
-    else if (mainSwitchMode == 'Spa Pump') {
-    	spaPumpOff()
-    }	
-}
+    log.debug "child"
 
-def getMainModeID() {
-	if (mainSwitchMode == 'Pool Light') {
-		return lightCircuitID()
-    }
-    else if (mainSwitchMode == 'Pool Pump') {
-    	return poolPumpCircuitID()
-    }
-    else if (mainSwitchMode == 'Spa Pump') {
-    	return spaPumpCircuitID()
-    }
-}
+        log.debug "child ${this} state: ${state}"
+        log.debug "turning off id:  ${state.id}"
+	parent.childOff(state.id)
+    sendEvent(name: "switch", value: "turningOff", displayed:false,isStateChange:false)
+} */
 
-def chlorinatorOn() {  
+
+
+/* def chlorinatorOn() {  
   return chlorinatorOn(70)
 }
 
@@ -765,11 +1139,11 @@ def chlorinatorOn(level) {
 
 def chlorinatorOff() {  
   return sendEthernet("/chlorinator/0")
-}
+} */
 
 // PUMP Control
 
-def poolPumpOn() {	
+/* def poolPumpOn() {	
 	return setCircuit(poolPumpCircuitID(),1)
 }
 
@@ -796,14 +1170,14 @@ def setPumpCallback(physicalgraph.device.HubResponse hubResponse) {
 	def msg = hubResponse.body
     log.debug("SetPumpCallback(MSG):${msg}")
     sendEthernet("/pump")
-}
+} */
 
 //
 // Intellibrite color light API interface
 //
 
 
-def setColor(circuitID,colorID) {
+/* def setColor(circuitID,colorID) {
     setCircuit(circuitID,1)
     if (colorID > 127)  {
 		sendEthernet("/light/mode/${colorID}", setColorCallback)
@@ -839,34 +1213,20 @@ def childofType(type) {
     return childDevices.find({it.currentcircuitFunction == type})
 }
 
-def childOn(cir_name) {
-	//log.debug "Got on Request from ${cir_name}"
-    def id = childCircuitID(cir_name)
-	return setCircuit(id,1)
-}
 
-def childOff(cir_name) {
-	//log.debug "Got off from ${cir_name}"
-	def id = childCircuitID(cir_name)
-	return setCircuit(id,0)
-}
 
 def childCircuitID(cirName) {
 	//log.debug("CCID---${cirName}")
 	return toIntOrNull(cirName?.split('-')?.getAt(1)?.substring(7))
 }
 
-def setCircuit(circuit, state) {
-  log.debug "Executing 'set(${circuit}, ${state})'"
-  sendEthernet("/circuit/${circuit}/set/${state}")
-  sendEthernet("/circuit")
-}
+ */
 
 // **********************************
 // Heater control functions to update the current heater state / setpoints on the poolController. 
 // spdevice is the child device with the correct DNI to use in referecing SPA or POOL
 // **********************************
-def heaterOn(spDevice) {
+/* def heaterOn(spDevice) {
   //log.debug "Executing 'heater on for ${spDevice}'"
   def tag = spDevice.deviceNetworkId.toLowerCase().split("-")[1]
   sendEthernet("/${tag}/mode/1")
@@ -906,8 +1266,71 @@ def heaterModeCallback(physicalgraph.device.HubResponse hubResponse) {
     	ph?.switchToMode(msg.status)
     }
 }
+ */
+def setCircuit(circuit, state) {
+  log.debug "Executing 'set(${circuit}, ${state})'"
+//   sendEthernet("/circuit/${circuit}/set/${state}")
+      def ip = getDataValue('controllerIP')
+  def port = getDataValue('controllerPort')
+    def opts = [
+            callback : 'parseResponse',
+            type: 'LAN_TYPE_CLIENT'
+        ]
+    sendHubCommand(new physicalgraph.device.HubAction(
+        [
+         	method: "PUT",
+         	path: "/state/circuit/setState",
+         	//protocol: Protocol.LAN,
+         	headers: [
+              	HOST: "${ip}:${port}",
+              	"Accept":"application/json" 
+            	],
+        	query:"",
+        	body: [id:circuit, state: state]
+        ],
+        null,
+        opts
+    ))
 
+}
 
+def setTempSetPoint(body, temp) {
+  log.debug "Executing 'setTempSetPoint(${body}, ${temp})'"
+
+    def ip = getDataValue('controllerIP')
+    def port = getDataValue('controllerPort')
+    def opts = [
+            callback : 'parseResponse',
+            type: 'LAN_TYPE_CLIENT'
+        ]
+    sendHubCommand(new physicalgraph.device.HubAction(
+        [
+         	method: "PUT",
+         	path: "/state/body/setPoint",
+         	headers: [
+              	HOST: "${ip}:${port}",
+              	"Accept":"application/json" 
+            	],
+        	query:"",
+        	body: [id:body, setPoint: temp]
+        ],
+        null,
+        opts
+    ))
+
+}
+
+def childOn(id) {
+	//log.debug "Got on Request from ${cir_name}"
+    //def id = childCircuitID(cir_name)
+	return setCircuit(id,1)
+}
+
+def childOff(id) {
+	//log.debug "Got off from ${cir_name}"
+	//def id = childCircuitID(cir_name)
+	return setCircuit(id,0)
+}
 
 // INTERNAL Methods
 private sendEthernet(message) {
@@ -942,6 +1365,9 @@ private sendEthernet(message, aCallback) {
   }
 }
 
+def getChildDNI(name) {
+	return getDataValue("controllerMac") + "-" + name
+} 
 
 private updateDeviceNetworkID(){
   setDeviceNetworkId()
@@ -1014,7 +1440,7 @@ private String convertPortToHex(port) {
 // TEMPERATUE Functions
 // Get stored temperature from currentState in current local scale
 
-def getTempInLocalScale(state) {
+/* def getTempInLocalScale(state) {
 	def temp = device.currentState(state)
 	def scaledTemp = convertTemperatureIfNeeded(temp.value.toBigDecimal(), temp.unit).toDouble()
 	return (getTemperatureScale() == "F" ? scaledTemp.round(0).toInteger() : roundC(scaledTemp))
@@ -1050,8 +1476,8 @@ def roundC (tempC) {
  def toIntOrNull(it) {
    return it?.isInteger() ? it.toInteger() : null 
  }
-
-def sync(ip, port) {
+ */
+/* def sync(ip, port) {
 	def existingIp = getDataValue("controllerIP")
 	def existingPort = getDataValue("controllerPort")
 	if (ip && ip != existingIp) {
@@ -1060,4 +1486,23 @@ def sync(ip, port) {
 	if (port && port != existingPort) {
 		updateDataValue("controllerPort", port)
 	}
-}
+} */
+
+def convertLazyMapToLinkedHashMap(def value) {
+    try{
+
+    if (value instanceof groovy.json.internal.LazyMap) {
+      Map copy = [:]
+      for (pair in (value as groovy.json.internal.LazyMap)) {
+        copy[pair.key] = convertLazyMapToLinkedHashMap(pair.value)
+      }
+      copy
+    } else {
+      value
+    }
+    }
+    catch (e){
+        log.debug "error with convert: ${e}"
+        value
+    }
+  }
